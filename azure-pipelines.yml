@@ -1,0 +1,76 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+  - master
+  
+  
+  variables:
+    dotnetSdkVersion: '5.x'
+    buildConfiguration: 'Release'
+  
+  stages:
+  - stage: 'Build'
+    displayName: 'Build the api'
+    jobs: 
+    - job: 'Build'
+      displayName: 'Build job'
+      pool:
+        vmImage: 'ubuntu-latest'
+  
+      steps:
+      - task: UseDotNet@2
+        displayName: 'Use .NET SDK $(dotnetSdkVersion)'
+        inputs:
+          version: '$(dotnetSdkVersion)'
+  
+      - task: DotNetCoreCLI@2
+        displayName: 'Restore project dependencies'
+        inputs:
+          command: 'restore'
+          projects: '**/*.csproj'
+  
+      - task: DotNetCoreCLI@2
+        displayName: 'Build the project - $(buildConfiguration)'
+        inputs:
+          command: 'build'
+          arguments: '--no-restore --configuration $(buildConfiguration)'
+          projects: '**/*.csproj'
+  
+      - task: DotNetCoreCLI@2
+        displayName: 'Publish the project - $(buildConfiguration)'
+        inputs:
+          command: 'publish'
+          projects: '**/*.csproj'
+          publishWebProjects: false
+          arguments: '--no-build --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/$(buildConfiguration)'
+          zipAfterPublish: true
+  
+      - publish: '$(Build.ArtifactStagingDirectory)'
+        artifact: drop
+  
+  - stage: 'Deploy'
+    displayName: 'Deploy the api'
+    dependsOn: Build
+    jobs:
+    - deployment: Deploy
+      pool:
+        vmImage: 'ubuntu-latest'
+      environment: deploy
+      variables:
+      - group: Release
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - download: current
+              artifact: drop
+            - task: AzureWebApp@1
+              displayName: 'Azure App Service Deploy: api'
+              inputs:
+                azureSubscription: '$(Subscription)'
+                appName: '$(WebAppName)'
+                appType: webAppLinux
+                package: '$(Pipeline.Workspace)/drop/$(buildConfiguration)/my-api.zip'
